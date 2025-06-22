@@ -1,3 +1,7 @@
+import os
+import random
+import asyncio
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
@@ -6,8 +10,6 @@ from telegram.ext import (
     ContextTypes,
 )
 from telegram.constants import ChatType
-import random
-import os
 
 # Questions by difficulty level (expand later)
 TRUTHS = {
@@ -59,8 +61,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Use /quit to leave mid-game.\n"
         "Use /status or /scoreboard to check game progress."
     )
-
-
 async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     user = update.effective_user
@@ -204,9 +204,6 @@ async def close_lobby(context: ContextTypes.DEFAULT_TYPE):
     )
 
     await ask_truth_or_dare(context, chat_id)
-
-import asyncio
-
 async def ask_truth_or_dare(context: ContextTypes.DEFAULT_TYPE, chat_id):
     players = context.chat_data.get("players")
     eliminated = context.chat_data.get("eliminated", set())
@@ -273,11 +270,11 @@ async def ask_truth_or_dare(context: ContextTypes.DEFAULT_TYPE, chat_id):
 
     context.chat_data["active_user"] = user_id
 
-    # Schedule a timeout job to eliminate player if no response in TURN_TIMEOUT
-    # Cancel existing timeout jobs first:
+    # Cancel existing timeout jobs for this turn:
     for job in context.job_queue.get_jobs_by_name(f"turn_timeout_{chat_id}"):
         job.schedule_removal()
 
+    # Schedule timeout for player response
     context.job_queue.run_once(
         timeout_player, TURN_TIMEOUT, chat_id=chat_id, name=f"turn_timeout_{chat_id}"
     )
@@ -296,7 +293,7 @@ async def timeout_player(context: ContextTypes.DEFAULT_TYPE):
     eliminated.add(active_user)
     context.chat_data["eliminated"] = eliminated
 
-    # Mention player
+    # Find mention for player
     mention = None
     for uid, name in players:
         if uid == active_user:
@@ -368,6 +365,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await asyncio.sleep(5)
     await ask_truth_or_dare(context, chat.id)
 
+
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     in_game = context.chat_data.get("in_game", False)
     if not in_game:
@@ -434,4 +432,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
