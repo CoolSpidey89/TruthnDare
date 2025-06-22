@@ -4,7 +4,6 @@ from telegram.ext import (
     CommandHandler,
     CallbackQueryHandler,
     ContextTypes,
-    JobQueue,
 )
 from telegram.constants import ChatType
 import random
@@ -23,9 +22,10 @@ DARES = [
     "Change your bio to 'I'm a potato 🥔' for 10 minutes.",
 ]
 
-LOBBY_TIMEOUT = 30  # seconds
+LOBBY_TIMEOUT = 30  # seconds for lobby open
+TURN_TIMEOUT = 30   # seconds per turn
 
-# /start command
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 Hey! I'm TruthieBot!\n"
@@ -33,7 +33,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# /startgame opens lobby for players to join
 async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     if chat.type not in [ChatType.GROUP, ChatType.SUPERGROUP]:
@@ -49,16 +48,15 @@ async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.chat_data["players"] = []
     context.chat_data["current_turn"] = 0
     context.chat_data["active_user"] = None
+    context.chat_data["eliminated"] = set()
 
     await update.message.reply_text(
         f"🎮 Game lobby is now OPEN! Players, type /join to enter. You have {LOBBY_TIMEOUT} seconds..."
     )
 
-    # Schedule lobby close after timeout
     context.job_queue.run_once(close_lobby, LOBBY_TIMEOUT, chat_id=chat.id)
 
 
-# /join lets players enter the lobby
 async def join_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     lobby = context.chat_data.get("lobby")
@@ -77,7 +75,6 @@ async def join_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"✅ {user.first_name} joined the game!")
 
 
-# Lobby close - start the game
 async def close_lobby(context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.job.chat_id
     lobby = context.chat_data.get("lobby", set())
@@ -93,28 +90,40 @@ async def close_lobby(context: ContextTypes.DEFAULT_TYPE):
     context.chat_data["players"] = players
     context.chat_data["current_turn"] = 0
     context.chat_data["in_game"] = True
-    context.chat_data["lobby"] = None  # close lobby
+    context.chat_data["lobby"] = None
+    context.chat_data["eliminated"] = set()
 
     player_names = ", ".join(name for _, name in players)
     await context.bot.send_message(chat_id, f"🚀 Game starting!\nPlayers: {player_names}")
 
-    # Start first turn
     await ask_truth_or_dare(context, chat_id)
 
 
-# Ask current player to choose truth or dare
 async def ask_truth_or_dare(context: ContextTypes.DEFAULT_TYPE, chat_id):
     players = context.chat_data.get("players")
-    turn = context.chat_data.get("current_turn", 0)
+    eliminated = context.chat_data.get("eliminated", set())
+    current_turn = context.chat_data.get("current_turn", 0)
 
-    if turn >= len(players):
-        await context.bot.send_message(chat_id, "🏁 Game over! All players had their turn.")
+    # Skip eliminated players
+    while current_turn < len(players) and players[current_turn][0] in eliminated:
+        current_turn += 1
+
+    if current_turn >= len(players):
+        # Game over — check if anyone left
+        alive_players = [p for p in players if p[0] not in eliminated]
+        if alive_players:
+            winners = ", ".join(name for _, name in alive_players)
+            await context.bot.send_message(chat_id, f"🏆 Game over! Winners: {winners}")
+        else:
+            await context.bot.send_message(chat_id, "🏁 Game over! No winners, all eliminated.")
         context.chat_data["in_game"] = False
         context.chat_data["active_user"] = None
         return
 
-    user_id, name = players[turn]
+    # Update current turn
+    context.chat_data["current_turn"] = current_turn
 
+    user_id, name = players[current_turn]
     keyboard = [
         [
             InlineKeyboardButton("🧠 Truth", callback_data="truth"),
@@ -131,8 +140,32 @@ async def ask_truth_or_dare(context: ContextTypes.DEFAULT_TYPE, chat_id):
 
     context.chat_data["active_user"] = user_id
 
+    # Schedule turn timeout job
+    context.job_queue.run_once(turn_timeout, TURN_TIMEOUT, chat_id=chat_id)
 
-# Handle button presses and move to next turn
+
+async def turn_timeout(context: ContextTypes.DEFAULT_TYPE):
+    chat_id = context.job.chat_id
+    active_user = context.chat_data.get("active_user")
+    players = context.chat_data.get("players", [])
+    eliminated = context.chat_data.get("eliminated", set())
+
+    if active_user is None:
+        return  # no active player
+
+    # Eliminate current player for timeout
+    name = next((n for uid, n in players if uid == active_user), "Unknown")
+    eliminated.add(active_user)
+    context.chat_data["eliminated"] = eliminated
+
+    await context.bot.send_message(chat_id, f"⏰ {name} took too long and is eliminated! ❌")
+
+    # Move to next turn
+    context.chat_data["current_turn"] += 1
+    context.chat_data["active_user"] = None
+    await ask_truth_or_dare(context, chat_id)
+
+
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = query.from_user.id
@@ -143,6 +176,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("⏳ Please wait for your turn!", show_alert=True)
         return
 
+    # Cancel turn timeout job to prevent elimination
+    current_jobs = context.job_queue.get_jobs_by_name("turn_timeout")
+    for job in current_jobs:
+        job.schedule_removal()
+
     if query.data == "truth":
         await query.edit_message_text(f"🧠 Truth: {random.choice(TRUTHS)}")
     elif query.data == "dare":
@@ -150,6 +188,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Move to next turn
     context.chat_data["current_turn"] += 1
+    context.chat_data["active_user"] = None
     chat_id = query.message.chat_id
     await ask_truth_or_dare(context, chat_id)
 
