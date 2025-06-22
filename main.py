@@ -1,47 +1,64 @@
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    CallbackQueryHandler,
+    ContextTypes
+)
 import random
 import os
 
-# Sample questions
+# Truth and Dare Questions
 TRUTHS = [
     "What’s your biggest secret?",
-    "What's the weirdest dream you’ve ever had?",
-    "Who do you have a crush on right now?"
+    "What's a lie you've told recently?",
+    "Who was your first crush?"
 ]
 
 DARES = [
-    "Do 10 pushups and send a selfie!",
-    "Talk like a baby for 2 minutes!",
-    "Change your profile pic to something funny!"
+    "Sing a song and send it!",
+    "Do 10 jumping jacks now!",
+    "Change your bio to 'I'm a potato 🥔' for 10 minutes."
 ]
 
-# Start command
+# /start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👋 Hey! I'm TruthieBot.\nUse /truthordare to start playing Truth or Dare!")
+    await update.message.reply_text("👋 Hey! I'm TruthieBot!\nUse /truthordare to play.")
 
-# Game start
+# /truthordare command with inline buttons
 async def truth_or_dare(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user.first_name
-    await update.message.reply_text(f"{user}, Truth or Dare? Reply with 'truth' or 'dare'.")
 
-# Handle player answer
-async def handle_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.lower()
-    if "truth" in text:
-        await update.message.reply_text(random.choice(TRUTHS))
-    elif "dare" in text:
-        await update.message.reply_text(random.choice(DARES))
-    else:
-        await update.message.reply_text("Please reply with 'truth' or 'dare'.")
+    keyboard = [
+        [
+            InlineKeyboardButton("🧠 Truth", callback_data="truth"),
+            InlineKeyboardButton("🎯 Dare", callback_data="dare")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(
+        f"{user}, choose Truth or Dare:",
+        reply_markup=reply_markup
+    )
+
+# Handle button presses
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()  # Acknowledge the button press
+
+    if query.data == "truth":
+        await query.edit_message_text(f"🧠 Truth: {random.choice(TRUTHS)}")
+    elif query.data == "dare":
+        await query.edit_message_text(f"🎯 Dare: {random.choice(DARES)}")
 
 # Main app
 if __name__ == '__main__':
-    TOKEN = os.getenv("BOT_TOKEN")  # Koyeb will set this in env vars
+    TOKEN = os.getenv("BOT_TOKEN")
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("truthordare", truth_or_dare))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_response))
+    app.add_handler(CallbackQueryHandler(button_handler))
 
     app.run_polling()
