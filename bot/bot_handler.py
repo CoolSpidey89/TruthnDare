@@ -9,6 +9,7 @@ from telegram.ext import (
 )
 from telegram.constants import ChatType
 
+# 🔹 Safe reply function to prevent crashes
 async def safe_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, **kwargs):
     if update.message:
         await update.message.reply_text(text, **kwargs)
@@ -58,7 +59,7 @@ TOTAL_ROUNDS = 3    # total rounds per game
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
+    await safe_reply(update, context,
         "👋 Hey! I'm TruthieBot!\n"
         "Use /startgame [easy|medium|spicy] to start a Truth or Dare game.\n"
         "Players join with /join.\n"
@@ -72,18 +73,17 @@ async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
 
     if chat.type not in [ChatType.GROUP, ChatType.SUPERGROUP]:
-        await update.message.reply_text("⚠️ This command only works in groups.")
+        await safe_reply(update, context, "⚠️ This command only works in groups.")
         return
 
     if context.chat_data.get("in_game", False):
-        await update.message.reply_text("⚠️ A game is already in progress!")
+        await safe_reply(update, context, "⚠️ A game is already in progress!")
         return
 
-    # Only admins can start game
     admins = await context.bot.get_chat_administrators(chat.id)
     admin_ids = [admin.user.id for admin in admins]
     if user.id not in admin_ids:
-        await update.message.reply_text("❌ Only group admins can start a game.")
+        await safe_reply(update, context, "❌ Only group admins can start a game.")
         return
 
     args = context.args
@@ -104,7 +104,7 @@ async def start_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "host_id": user.id,
     })
 
-    await update.message.reply_text(
+    await safe_reply(update, context,
         f"🎮 Game lobby is now OPEN! Players, type /join to enter. You have {LOBBY_TIMEOUT} seconds...\n"
         f"Difficulty set to *{difficulty.capitalize()}*.",
         parse_mode="Markdown",
@@ -118,17 +118,15 @@ async def join_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lobby = context.chat_data.get("lobby")
 
     if lobby is None:
-        await update.message.reply_text(
-            "❌ No active game lobby. Wait for the host to start with /startgame."
-        )
+        await safe_reply(update, context, "❌ No active game lobby. Wait for the host to start with /startgame.")
         return
 
     if (user.id, user.first_name) in lobby:
-        await update.message.reply_text(f"✅ {user.first_name}, you are already in the lobby.")
+        await safe_reply(update, context, f"✅ {user.first_name}, you are already in the lobby.")
         return
 
     lobby.add((user.id, user.first_name))
-    await update.message.reply_text(f"✅ {user.first_name} joined the game!")
+    await safe_reply(update, context, f"✅ {user.first_name} joined the game!")
 
 
 async def quit_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -138,30 +136,28 @@ async def quit_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     in_game = context.chat_data.get("in_game", False)
 
     if not in_game:
-        await update.message.reply_text("❌ No game in progress to quit.")
+        await safe_reply(update, context, "❌ No game in progress to quit.")
         return
 
     player_ids = [uid for uid, _ in players]
     if user.id not in player_ids:
-        await update.message.reply_text("❌ You are not part of the current game.")
+        await safe_reply(update, context, "❌ You are not part of the current game.")
         return
 
     if user.id in eliminated:
-        await update.message.reply_text("❌ You are already eliminated.")
+        await safe_reply(update, context, "❌ You are already eliminated.")
         return
 
     eliminated.add(user.id)
     context.chat_data["eliminated"] = eliminated
 
-    await update.message.reply_text(f"⚠️ {user.first_name} has quit and is eliminated from the game!")
+    await safe_reply(update, context, f"⚠️ {user.first_name} has quit and is eliminated from the game!")
 
-    # If quitting user is current turn, advance turn immediately
     if context.chat_data.get("active_user") == user.id:
         context.chat_data["current_turn"] += 1
         context.chat_data["active_user"] = None
         chat_id = update.effective_chat.id
         await ask_truth_or_dare(context, chat_id)
-
 
 async def close_lobby(context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.job.chat_id
@@ -183,7 +179,6 @@ async def close_lobby(context: ContextTypes.DEFAULT_TYPE):
     context.chat_data["scores"] = {uid: 0 for uid, _ in players}
     context.chat_data["round"] = 1
 
-    # Build mentions list for players
     mentions = []
     for user_id, first_name in players:
         try:
@@ -219,11 +214,9 @@ async def ask_truth_or_dare(context: ContextTypes.DEFAULT_TYPE, chat_id):
     round_num = context.chat_data.get("round", 1)
     difficulty = context.chat_data.get("difficulty", "medium")
 
-    # Skip eliminated players' turns
     while current_turn < len(players) and players[current_turn][0] in eliminated:
         current_turn += 1
 
-    # Check if round ended or game over
     if current_turn >= len(players):
         alive_players = [p for p in players if p[0] not in eliminated]
 
@@ -250,7 +243,6 @@ async def ask_truth_or_dare(context: ContextTypes.DEFAULT_TYPE, chat_id):
             context.chat_data["active_user"] = None
             return
 
-        # Start new round
         context.chat_data["round"] = round_num + 1
         context.chat_data["current_turn"] = 0
         await context.bot.send_message(chat_id, f"➡️ Starting Round {context.chat_data['round']}!")
@@ -275,17 +267,18 @@ async def ask_truth_or_dare(context: ContextTypes.DEFAULT_TYPE, chat_id):
         reply_markup=reply_markup,
     )
 
-    # Set a timeout task to auto-skip if no choice is made
-    context.chat_data["turn_task"] = context.application.create_task(turn_timeout(context, chat_id, user_id))
-
-
+    context.chat_data["turn_task"] = context.application.create_task(
+        turn_timeout(context, chat_id, user_id)
+    )
 async def turn_timeout(context: ContextTypes.DEFAULT_TYPE, chat_id, user_id):
     await asyncio.sleep(TURN_TIMEOUT)
 
-    # Check if still waiting for the same user
     if context.chat_data.get("active_user") == user_id:
-        await context.bot.send_message(chat_id, f"⏰ Time's up for <a href='tg://user?id={user_id}'>your turn</a>! Skipping turn.", parse_mode="HTML")
-        # Advance turn
+        await context.bot.send_message(
+            chat_id,
+            f"⏰ Time's up for <a href='tg://user?id={user_id}'>your turn</a>! Skipping turn.",
+            parse_mode="HTML"
+        )
         context.chat_data["current_turn"] += 1
         context.chat_data["active_user"] = None
         await ask_truth_or_dare(context, chat_id)
@@ -302,15 +295,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ It's not your turn!")
         return
 
-    choice = query.data  # "truth" or "dare"
+    choice = query.data
     difficulty = context.chat_data.get("difficulty", "medium")
 
-    # Cancel timeout task if running
     turn_task = context.chat_data.get("turn_task")
     if turn_task:
         turn_task.cancel()
 
-    # Pick question or dare randomly
     if choice == "truth":
         question = random.choice(TRUTHS[difficulty])
         await query.edit_message_text(f"❓ Truth: {question}")
@@ -318,7 +309,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         question = random.choice(DARES[difficulty])
         await query.edit_message_text(f"🔥 Dare: {question}")
 
-    # After 30 seconds, ask for done or pass buttons
     keyboard = [
         [
             InlineKeyboardButton("✅ Done", callback_data="done"),
@@ -329,7 +319,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await context.bot.send_message(chat_id, "Did you complete the task?", reply_markup=reply_markup)
 
-    # Store current challenge for checking
     context.chat_data["current_challenge"] = {
         "user_id": user.id,
         "choice": choice,
@@ -343,27 +332,21 @@ async def challenge_response_handler(update: Update, context: ContextTypes.DEFAU
     await query.answer()
 
     current_challenge = context.chat_data.get("current_challenge")
-    active_user = context.chat_data.get("active_user")
-
     if current_challenge is None or user.id != current_challenge.get("user_id"):
         await query.edit_message_text("❌ This is not your challenge.")
         return
 
     if query.data == "done":
-        # Increase score for completing challenge
         scores = context.chat_data.get("scores", {})
         scores[user.id] = scores.get(user.id, 0) + 1
         context.chat_data["scores"] = scores
-
         await query.edit_message_text("🎉 Challenge completed! +1 point.")
     else:
-        # Eliminate player for passing
         eliminated = context.chat_data.get("eliminated", set())
         eliminated.add(user.id)
         context.chat_data["eliminated"] = eliminated
         await query.edit_message_text("🚫 You passed and are eliminated from the game.")
 
-    # Move to next turn
     context.chat_data["current_turn"] += 1
     context.chat_data["active_user"] = None
     context.chat_data["current_challenge"] = None
@@ -374,7 +357,7 @@ async def challenge_response_handler(update: Update, context: ContextTypes.DEFAU
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     in_game = context.chat_data.get("in_game", False)
     if not in_game:
-        await update.message.reply_text("❌ No game in progress.")
+        await safe_reply(update, context, "❌ No game in progress.")
         return
 
     players = context.chat_data.get("players", [])
@@ -414,7 +397,7 @@ async def scoreboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     eliminated = context.chat_data.get("eliminated", set())
 
     if not scores or not players:
-        await update.message.reply_text("❌ No game in progress.")
+        await safe_reply(update, context, "❌ No game in progress.")
         return
 
     sorted_scores = sorted(
