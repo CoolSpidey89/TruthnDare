@@ -6,6 +6,13 @@ from telegram.ext import ApplicationBuilder
 
 from .bot_handler import get_handlers  # Adjust import if needed
 
+from telegram.ext import ContextTypes
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.error(msg="Exception while handling update:", exc_info=context.error)
+
+application.add_error_handler(error_handler)
+
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
@@ -39,15 +46,17 @@ async def health_check():
 @app.on_event("startup")
 async def on_startup():
     logger.info("Starting Telegram Bot...")
-    
+
     await application.initialize()
     await application.start()
-    
     await bot.initialize()
 
     webhook_full_url = f"{WEBHOOK_URL}"
     await bot.set_webhook(webhook_full_url)
-    logger.info(f"Webhook set to: {webhook_full_url}")
+
+    logger.info(f"✅ Webhook set to: {webhook_full_url}")
+    logger.info("🚀 Bot is up and running!")
+
     
     
 @app.post("/webhook")
