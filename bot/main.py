@@ -41,7 +41,6 @@ async def on_startup():
     logger.info("Starting Telegram Bot...")
     
     await application.initialize()
-    
     await application.start()
 
     webhook_full_url = f"{WEBHOOK_URL}"
