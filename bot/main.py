@@ -42,8 +42,9 @@ async def on_startup():
     webhook_full_url = f"{WEBHOOK_URL}"
     await bot.set_webhook(webhook_full_url)
     logger.info(f"Webhook set to: {webhook_full_url}")
+    
+    await application.initialize()
 
-await application.initialize()
 
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
