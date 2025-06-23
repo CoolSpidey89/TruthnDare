@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request, Response, status
 from telegram import Update, Bot
 from telegram.ext import ApplicationBuilder
 
-from bot_handler import get_handlers  # Adjust import if needed
+from .bot_handler import get_handlers  # Adjust import if needed
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
