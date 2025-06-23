@@ -9,6 +9,12 @@ from telegram.ext import (
 )
 from telegram.constants import ChatType
 
+async def safe_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, **kwargs):
+    if update.message:
+        await update.message.reply_text(text, **kwargs)
+    elif update.effective_chat:
+        await context.bot.send_message(update.effective_chat.id, text, **kwargs)
+
 # Questions by difficulty level
 TRUTHS = {
     "easy": [
