@@ -10,6 +10,40 @@ from telegram.ext import (
     ContextTypes,
 )
 from telegram.constants import ChatType
+from http import HTTPStatus
+from fastapi import FastAPI, Request, Response
+import uvicorn
+
+TOKEN = os.getenv("7977945135:AAHLNrUZYNwlItQlIvbcNjMhSy18Je25caM")
+WEBHOOK_PATH = f"/webhook/7977945135:AAHLNrUZYNwlItQlIvbcNjMhSy18Je25caM"
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Set to your Render service URL
+
+# Replace your previous app-building code:
+ptb = Application.builder().token(TOKEN).build()
+ptb.add_handler(CommandHandler("start", start))
+# ... add other handlers here ...
+
+app = FastAPI()
+
+@app.on_event("startup")
+async def startup():
+    await ptb.start()
+    await ptb.bot.set_webhook(WEBHOOK_URL + WEBHOOK_PATH)
+
+@app.post(WEBHOOK_PATH)
+async def webhook(request: Request):
+    data = await request.json()
+    update = Update.de_json(data, ptb.bot)
+    await ptb.process_update(update)
+    return Response(status_code=HTTPStatus.OK)
+
+@app.on_event("shutdown")
+async def shutdown():
+    await ptb.bot.delete_webhook()
+    await ptb.stop()
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
 
 # Questions by difficulty level (expand later)
 TRUTHS = {
