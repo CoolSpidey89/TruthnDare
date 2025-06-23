@@ -39,7 +39,7 @@ async def health_check():
 @app.on_event("startup")
 async def on_startup():
     logger.info("Starting Telegram Bot...")
-    webhook_full_url = f"{WEBHOOK_URL}/webhook"
+    webhook_full_url = f"{WEBHOOK_URL}"
     await bot.set_webhook(webhook_full_url)
     logger.info(f"Webhook set to: {webhook_full_url}")
 
