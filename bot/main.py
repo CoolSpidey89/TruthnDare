@@ -42,6 +42,8 @@ async def on_startup():
     
     await application.initialize()
     
+    await application.start()
+
     webhook_full_url = f"{WEBHOOK_URL}"
     await bot.set_webhook(webhook_full_url)
     logger.info(f"Webhook set to: {webhook_full_url}")
