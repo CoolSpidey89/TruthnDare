@@ -2,23 +2,18 @@ import os
 import logging
 from fastapi import FastAPI, Request, Response, status
 from telegram import Update, Bot
-from telegram.ext import ApplicationBuilder
+from telegram.ext import ApplicationBuilder, ContextTypes
 
 from .bot_handler import get_handlers  # Adjust import if needed
 
-from telegram.ext import ContextTypes
-
-async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    logger.error(msg="Exception while handling update:", exc_info=context.error)
-
-application.add_error_handler(error_handler)
-
+# 🔹 Logging configuration
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
+# 🔹 Load environment variables
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
@@ -27,14 +22,22 @@ if not BOT_TOKEN:
 if not WEBHOOK_URL:
     raise RuntimeError("Please set the WEBHOOK_URL environment variable")
 
+# 🔹 FastAPI and Telegram bot setup
 app = FastAPI()
 bot = Bot(token=BOT_TOKEN)
 application = ApplicationBuilder().token(BOT_TOKEN).build()
 
-# Register handlers from bot_handler.py
+# 🔹 Register Telegram handlers
 for handler in get_handlers():
     application.add_handler(handler)
 
+# 🔹 Global error handler
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.error("Exception while handling update:", exc_info=context.error)
+
+application.add_error_handler(error_handler)
+
+# 🔹 Root and health check endpoints
 @app.get("/")
 async def root():
     return {"message": "Truth or Dare Telegram Bot is running!"}
@@ -43,22 +46,20 @@ async def root():
 async def health_check():
     return {"status": "ok"}
 
+# 🔹 Startup: Set webhook
 @app.on_event("startup")
 async def on_startup():
-    logger.info("Starting Telegram Bot...")
+    logger.info("🚀 Starting Telegram Bot...")
 
     await application.initialize()
     await application.start()
     await bot.initialize()
 
-    webhook_full_url = f"{WEBHOOK_URL}"
-    await bot.set_webhook(webhook_full_url)
+    await bot.set_webhook(WEBHOOK_URL)
+    logger.info(f"✅ Webhook set to: {WEBHOOK_URL}")
+    logger.info("💡 Bot is now active and listening for updates.")
 
-    logger.info(f"✅ Webhook set to: {webhook_full_url}")
-    logger.info("🚀 Bot is up and running!")
-
-    
-    
+# 🔹 Webhook receiver
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
     try:
@@ -67,6 +68,5 @@ async def telegram_webhook(request: Request):
         await application.process_update(update)
         return Response(status_code=status.HTTP_200_OK)
     except Exception as e:
-        logger.error(f"Error handling update: {e}")
+        logger.error(f"❌ Error handling update: {e}")
         return Response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
